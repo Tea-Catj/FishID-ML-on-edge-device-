@@ -1,2 +1,2 @@
-# FishID-ML-on-edge-device-
-this is a school project 
+# FishIdentifer-tinyML-on-edge-device
+this is a project for class 

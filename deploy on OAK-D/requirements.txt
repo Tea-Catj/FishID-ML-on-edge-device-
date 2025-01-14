@@ -1,0 +1,7 @@
+ultralytics
+cvzone
+tensorflow
+depthai
+opencv-python
+depthai-sdk>=1.9.1.1
+numpy>=1.18.5
