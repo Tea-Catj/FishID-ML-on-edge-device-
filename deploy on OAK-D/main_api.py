@@ -11,9 +11,9 @@ import blobconverter
 # parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", help="Provide model name or model path for inference",
-                    default='Fish', type=str)
+                    default='model/best3_openvino_2022.1_12shave.blob', type=str)
 parser.add_argument("-c", "--config", help="Provide config path for inference",
-                    default='json/Fish.json', type=str)
+                    default='json/best3.json', type=str)
 args = parser.parse_args()
 
 # parse config
@@ -48,7 +48,7 @@ labels = nnMappings.get("labels", {})
 nnPath = args.model
 if not Path(nnPath).exists():
     print("No blob found at {}. Looking into DepthAI model zoo.".format(nnPath))
-    nnPath = str(blobconverter.from_zoo(args.model, shaves = 6, zoo_type = "depthai", use_cache=False))
+    nnPath = str(blobconverter.from_zoo(args.model, shaves = 8, zoo_type = "depthai", use_cache=True))
 # sync outputs
 syncNN = True
 
