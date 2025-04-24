@@ -1,0 +1,7 @@
+depthai ==2.24.0.0 
+opencv-contrib-python 
+blobconverter 
+numpy
+opencv-python
+depthai-sdk ==1.9.4
+depthai-viewer
