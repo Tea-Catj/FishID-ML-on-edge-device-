@@ -3,4 +3,7 @@ opencv-contrib-python
 blobconverter 
 numpy
 opencv-python
-depthai-sdk
+depthai-sdk 
+depthai-viewer
+scipy
+pydantic

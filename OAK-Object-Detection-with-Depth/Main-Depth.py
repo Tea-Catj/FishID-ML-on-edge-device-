@@ -7,6 +7,9 @@ import numpy as np
 fourcc_disparity = cv2.VideoWriter_fourcc(*'MJPG')
 out_disparity = cv2.VideoWriter('test.avi', fourcc_disparity, 30.0, (640, 400)) # Adjust resolution
 
+#get some info for depth calculation
+baseline = 75 # in mm
+focal_length= 426.55731201171875 # in pixel
 
 def getFrame(queue):
     # Get frame from queue
@@ -52,6 +55,24 @@ def mouseCallback(event, x, y, flags, param):
         mouseX = x
         mouseY = y
 
+def mouse_callbackDepth(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN and param is not None:
+        display_frame, disparity_frame = param
+        disparity_value = disparity_frame[y, x]
+        depth = ((baseline*focal_length)/disparity_value)/1000.0
+        print(depth)
+        if depth is not None:
+            depth_text = f"{depth:.3f} m"
+            text_x = x + 5  # Offset the text slightly from the click
+            text_y = y - 5  # Offset the text slightly from the click
+          # Ensure the text position is within the image bounds to prevent errors
+            if text_x < display_frame.shape[1] and text_y >= 0:
+                cv2.putText(display_frame, depth_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            else:
+                print(f"Warning: Text position ({text_x}, {text_y}) is out of bounds. Not drawing text.")
+        else:
+            cv2.putText(display_frame, "N/A", (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
 if __name__ == '__main__':
     mouseX = 0
     mouseY = 640
@@ -92,24 +113,28 @@ if __name__ == '__main__':
  
         cv2.namedWindow("Stereo Pair")
         cv2.setMouseCallback("Stereo Pair", mouseCallback)
- 
+
+
         # Variable use to toggle between side by side view and one frame view.
         sideBySide = False
 
         while True:
         
          # Get the disparity map.
-            disparity = getFrame(disparityQueue)
+            disparity1 = getFrame(disparityQueue)
  
             # Colormap disparity for display.
-            disparity = (disparity * disparityMultiplier).astype(np.uint8)
-            disparity = cv2.applyColorMap(disparity, cv2.COLORMAP_JET)
+            disparity2 = (disparity1 * disparityMultiplier).astype(np.uint8)
+            disparity3 = cv2.applyColorMap(disparity2, cv2.COLORMAP_JET)
  
-            out_disparity.write(disparity)
+            out_disparity.write(disparity3)
             # Get the left and right rectified frame.
             leftFrame = getFrame(rectifiedLeftQueue);
             rightFrame = getFrame(rectifiedRightQueue)
- 
+
+            frame_data_for_callback = (disparity3, disparity1)
+            cv2.namedWindow("Disparity")
+            cv2.setMouseCallback("Disparity", mouse_callbackDepth, frame_data_for_callback )
             if sideBySide:
                 # Show side by side view.
                 imOut = np.hstack((leftFrame, rightFrame))
@@ -123,7 +148,7 @@ if __name__ == '__main__':
                 # Draw clicked point.
                 imOut = cv2.circle(imOut, (mouseX, mouseY), 2, (255, 255, 128), 2)
                 cv2.imshow("Stereo Pair", imOut)
-                cv2.imshow("Disparity", disparity)
+                cv2.imshow("Disparity", disparity3)
  
                 # Check for keyboard input
                 key = cv2.waitKey(1)
