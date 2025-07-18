@@ -1,18 +1,56 @@
+#!/usr/bin/env python3
+
+from pathlib import Path
+import cv2
 import depthai as dai
-import json
+import argparse
+import numpy as np
+import cv2
 
-# Load the calibration data from the JSON file
-backup_filename = "oakd_factory_calibration.json"  # Replace with your actual filename
-with open(backup_filename, 'r') as f:
-    calibration_data = json.load(f)
+calibJsonFile = str((Path(__file__).parent / Path('/depthai_calib.json')).resolve().absolute())
 
-# Connect to the OAK-D camera
-with dai.Device() as device:
-    # Convert the JSON data back to the format expected by depthai
-    calibration_data_string = json.dumps(calibration_data)
-    calibration_obj = dai.CalibrationHandler.parseCalibration(calibration_data_string)
+parser = argparse.ArgumentParser()
+parser.add_argument('calibJsonFile', nargs='?', help="Path to calibration file in json", default=calibJsonFile)
+args = parser.parse_args()
 
-    # Write the calibration data to the device
-    device.flashFactoryCalibration(calibration_obj)
+calibData = dai.CalibrationHandler(args.calibJsonFile)
 
-    print("Factory calibration data restored to the OAK-D.")
+# Create pipeline
+pipeline = dai.Pipeline()
+pipeline.setCalibrationData(calibData)
+
+# Define sources and output
+monoLeft = pipeline.create(dai.node.MonoCamera)
+monoRight = pipeline.create(dai.node.MonoCamera)
+stereo = pipeline.create(dai.node.StereoDepth)
+xoutDepth = pipeline.create(dai.node.XLinkOut)
+xoutDepth.setStreamName("depth")
+
+# MonoCamera
+monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
+monoLeft.setCamera("left")
+# monoLeft.setFps(5.0)
+monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
+monoRight.setCamera("right")
+# monoRight.setFps(5.0)
+
+# Linking
+monoLeft.out.link(stereo.left)
+monoRight.out.link(stereo.right)
+stereo.depth.link(xoutDepth.input)
+
+# Connect to device and start pipeline
+with dai.Device(pipeline) as device:
+
+    depthQueue = device.getOutputQueue(name="depth", maxSize=4, blocking=False)
+
+    while True:
+        # blocking call, will wait until a new data has arrived
+        inDepth = depthQueue.get()
+        frame = inDepth.getFrame()
+
+        # frame is ready to be shown
+        cv2.imshow("depth", frame)
+
+        if cv2.waitKey(1) == ord('q'):
+            break

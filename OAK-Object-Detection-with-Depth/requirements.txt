@@ -1,4 +1,4 @@
-depthai
+depthai==2.30.0.0
 opencv-contrib-python 
 blobconverter 
 numpy
@@ -7,3 +7,5 @@ depthai-sdk
 depthai-viewer
 scipy
 pydantic
+open3d; platform_machine != "armv7l"
+torch
