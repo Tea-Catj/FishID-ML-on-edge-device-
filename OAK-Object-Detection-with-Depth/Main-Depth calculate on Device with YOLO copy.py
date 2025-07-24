@@ -30,9 +30,9 @@ focal_length= 426.55731201171875 # in pixel
 # parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", help="Provide model name or model path for inference",
-                    default='model/MainModel_openvino_2022.1_3shave.blob', type=str)
+                    default='model/yolo11n_openvino_2022.1_6shave.blob', type=str)
 parser.add_argument("-c", "--config", help="Provide config path for inference",
-                    default='json/MainModel.json', type=str)
+                    default='json/yolo11n.json', type=str)
 args = parser.parse_args()
 
 # parse config
