@@ -1,11 +1,11 @@
 depthai==2.30.0.0
-opencv-contrib-python 
-blobconverter 
-numpy
-opencv-python
-depthai-sdk 
-depthai-viewer
-scipy
-pydantic
-open3d; platform_machine != "armv7l"
-torch
+opencv-contrib-python==4.11.0.86 
+blobconverter==1.4.3 
+numpy==1.26.4
+opencv-python==4.11.0.86
+depthai-sdk==1.2.3
+depthai-viewer==0.2.9
+scipy==1.15.2
+pydantic==2.11.4
+open3d==0.19.0 
+torch==2.7.0
