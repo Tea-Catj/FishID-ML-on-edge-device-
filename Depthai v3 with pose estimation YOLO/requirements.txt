@@ -1,0 +1,4 @@
+depthai == 3.0.0
+opencv-python
+depthai-nodes
+modelconv
