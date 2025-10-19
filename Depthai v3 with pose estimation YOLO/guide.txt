@@ -1,0 +1,5 @@
++ virtual environment:
+if the venv is not created, turn on the terminal and run "python -m venv venv"
+then run "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted -Force"
+to activate the venv we simply run venv/Scripts/Activate (should run in the folder that contain venv folder)
+this is for window
