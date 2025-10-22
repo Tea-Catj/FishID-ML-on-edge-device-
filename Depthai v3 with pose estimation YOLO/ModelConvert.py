@@ -15,5 +15,5 @@ converted_model = convert.RVC2(
     yolo_class_names=["person"],
     tasks=["KEYPOINT_DETECTION"],
     license_type="MIT",
-    is_public=False, 
+    is_public=False
 )    
