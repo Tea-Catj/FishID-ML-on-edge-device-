@@ -17,26 +17,26 @@ with pipeline:
     cameraOutput = camRgb.requestOutput((640, 320), type=dai.ImgFrame.Type.BGR888p, fps=fps_limit)
 
     #------------------------------------------------------------------------------------------------------------------------
-    #define mono cam
+    # define mono cam
     left = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
     right = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
     leftOutput =  left.requestOutput((640, 320),type=dai.ImgFrame.Type.NV12, fps= fps_limit)
     rightOutput = right.requestOutput((640, 320),type= dai.ImgFrame.Type.NV12, fps = fps_limit)
 
-    #define stereo 
+    # define stereo 
     stereo = pipeline.create(dai.node.StereoDepth).build(
         left=leftOutput,
         right=rightOutput,
     )
 
-    #stereo config
+    # stereo config
     stereo.initialConfig.setMedianFilter(dai.MedianFilter.MEDIAN_OFF)
     stereo.setRectification(True)
     stereo.setExtendedDisparity(True)
     stereo.setLeftRightCheck(True)
     cameraOutput.link(stereo.inputAlignTo)
 
-    #create depthmap
+    # create depthmap
     depth_parser = pipeline.create(ApplyColormap).build(stereo.disparity)
     depth_parser.setMaxValue(int(stereo.initialConfig.getMaxDisparity())) # NOTE: Uncomment when DAI fixes a bug
     depth_parser.setColormap(cv2.COLORMAP_JET)
@@ -53,7 +53,7 @@ with pipeline:
     nn_with_parser.input.setBlocking(False)
     nn_with_parser.input.setMaxSize(1)
     
-    #since the ParsingNeuralNetwork node is already choose the correct parser for the model, to mannually change the config
+    # since the ParsingNeuralNetwork node is already choose the correct parser for the model, to mannually change the config
     # you need to get the parser and change its parameter  
     if nn_with_parser.getParser():
         parser = nn_with_parser.getParser()
@@ -61,14 +61,8 @@ with pipeline:
         parser.setIouThreshold(0.5)
 
     #-------------------------------------------------------------------------------------------------------------
-    #create pipeline for spatial calculation
-    Spatial_data = pipeline.create(dai.node.SpatialLocationCalculator)
-
-    #config for spatial
-    config = dai.SpatialLocationCalculatorConfigData()
-    config.depthThresholds.lowerThreshold = 10
-    config.depthThresholds.upperThreshold = 10000
-    calculationAlgorithm = dai.SpatialLocationCalculatorAlgorithm.MEDIAN
+    # create pipeline for spatial calculation
+    Spatial_cal = pipeline.create(dai.node.SpatialLocationCalculator)
 
     #------------------------------------------------------------------------------------------------------------
     # Configure the visualizer node
@@ -79,22 +73,32 @@ with pipeline:
     visualizer.addTopic("Right", rightOutput, "images")
 
     #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    #define queue
+    # define queue
 
-    #create neuro network parsed ouput queue for getting the model output
+    # create neuro network parsed ouput queue for getting the model output
     parser_output_queue = nn_with_parser.out.createOutputQueue(maxSize= 1 ,blocking= False)
     keypoint_names=["Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear", "Left Shoulder", "Right Shoulder","Left Elbow", "Right Elbow", "Left Wrist", "Right Wrist", "Left Hip", "Right Hip", "Left Knee", "Right Knee", "Left Ankle", "Right Ankle"]
 
-    #create spatial data queue
-    Spatial_data_queue = Spatial_data.out.createOutputQueue(maxSize= 1 ,blocking= False)
+    # create spatial data queue
+    Spatial_data_queue = Spatial_cal.out.createOutputQueue(maxSize= 1 ,blocking= False)
+
+    # spatial config input queue 
+    Spatial_config_queue = Spatial_cal.inputConfig.createInputQueue(maxSize= 1 ,blocking= False)
+
+    # depthdata from depth output to spatial cal for calculation
+    Spatial_depth_queue = Spatial_cal.passthroughDepth.createOutputQueue(maxSize= 1 ,blocking= False)
+    stereo.depth.link(Spatial_cal.inputDepth)
 
     #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    #start the pipeline
+    # start the pipeline
     pipeline.start()
     visualizer.registerPipeline(pipeline)
     while True:
+        
+        # Create a message to hold all ROIs
+        new_spatial_config = dai.SpatialLocationCalculatorConfig()
 
         msg = parser_output_queue.tryGet() 
         
@@ -115,7 +119,6 @@ with pipeline:
                         # 2. Iterate over each keypoint for the current person
                         # The length of keypoint_names (17) should match len(detection.keypoints)
                         for kp_idx, keypoint in enumerate(detection.keypoints):
-                            
                             # Get the name from your predefined list
                             name = keypoint_names[kp_idx]
                             
@@ -123,6 +126,35 @@ with pipeline:
                             # NOTE: Keypoint objects usually have 'x' and 'y' or 'x_coord'/'y_coord'
                             print(f"    - {name}: ({keypoint.x:.4f}, {keypoint.y:.4f})")
                             
+                            roi_data= dai.SpatialLocationCalculatorConfigData()
+                            # Determine the normalized center of your keypoint
+                            center_x = keypoint.x # Assuming normalized coordinates (0.0 to 1.0)
+                            center_y = keypoint.y
+                            
+                            # Define a small normalized ROI (e.g., a square with side length 0.01)
+                            normalized_side = 0.01 # This corresponds to a very small area
+                            
+                            # 2. Set the single ROI (the tiny square around the keypoint)
+                            roi_data.roi = dai.Rect(
+                                dai.Point2f(center_x - normalized_side/2, center_y - normalized_side/2),
+                                dai.Point2f(center_x + normalized_side/2, center_y + normalized_side/2)
+                            )
+                            
+                            # Add the individual ROI data to the main container
+                            new_spatial_config.addROI(roi_data)
+    
+                        
+                    # Send the config to the OAK-D
+                    Spatial_config_queue.send(new_spatial_config)
+
+                    # get calculated results 
+                    spatial_data = Spatial_data_queue.get().getSpatialLocations()
+                    
+                    # print 
+                    for i, spatial_location in enumerate(spatial_data):
+                        # This is a keypoint's 3D coordinate
+                        z = spatial_location.spatialCoordinates.z
+                        print(f"Keypoint {i} - Z: {z:.2f}mm")
 
             # If the message is a different structure but has keypoints at the root level:
             elif hasattr(msg, 'keypoints'):
