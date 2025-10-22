@@ -1,4 +1,4 @@
+modelconv == 0.4.5
 depthai == 3.0.0
-opencv-python
-depthai-nodes
-modelconv
+opencv-python == 4.11.0.86
+depthai-nodes == 0.3.4
