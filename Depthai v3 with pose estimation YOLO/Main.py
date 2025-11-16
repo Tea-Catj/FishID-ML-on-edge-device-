@@ -57,6 +57,7 @@ with pipeline:
     # you need to get the parser and change its parameter  
     if nn_with_parser.getParser():
         parser = nn_with_parser.getParser()
+        #yolo parser parameter
         parser.setConfidenceThreshold(0.8)
         parser.setIouThreshold(0.5)
 
@@ -97,9 +98,6 @@ with pipeline:
     visualizer.registerPipeline(pipeline)
     while True:
         
-        # Create a message to hold all ROIs
-        new_spatial_config = dai.SpatialLocationCalculatorConfig()
-
         msg = parser_output_queue.tryGet() 
         
         if msg is not None:
@@ -107,6 +105,9 @@ with pipeline:
             if hasattr(msg, 'detections') and msg.detections:
                 print(f"\n--- Found {len(msg.detections)} People ---")
                 
+                # Create a message to hold all ROIs
+                new_spatial_config = dai.SpatialLocationCalculatorConfig()
+
                 # 1. Iterate over each detected person
                 for i, detection in enumerate(msg.detections):
                     print(f"{detection.label_name} {i+1}: Confidence: {detection.confidence:.2f}")
@@ -117,14 +118,15 @@ with pipeline:
                         print(f"  Keypoints ({len(detection.keypoints)}):")
                         
                         # 2. Iterate over each keypoint for the current person
-                        # The length of keypoint_names (17) should match len(detection.keypoints)
+                        # The length of keypoint_names should match len(detection.keypoints)
                         for kp_idx, keypoint in enumerate(detection.keypoints):
-                            # Get the name from your predefined list
-                            name = keypoint_names[kp_idx]
                             
-                            # Print the keypoint name and its normalized coordinates (0.0 to 1.0)
-                            # NOTE: Keypoint objects usually have 'x' and 'y' or 'x_coord'/'y_coord'
-                            print(f"    - {name}: ({keypoint.x:.4f}, {keypoint.y:.4f})")
+                            # # Get the name from your predefined list
+                            # name = keypoint_names[kp_idx]
+                            
+                            # # Print the keypoint name and its normalized coordinates (0.0 to 1.0)
+                            # # NOTE: Keypoint objects usually have 'x' and 'y' or 'x_coord'/'y_coord'
+                            # print(f"    - {name}: ({keypoint.x:.4f}, {keypoint.y:.4f})")
                             
                             roi_data= dai.SpatialLocationCalculatorConfigData()
                             # Determine the normalized center of your keypoint
@@ -152,17 +154,14 @@ with pipeline:
                     
                     # print 
                     for i, spatial_location in enumerate(spatial_data):
+                        name = keypoint_names[i]
                         # This is a keypoint's 3D coordinate
                         z = spatial_location.spatialCoordinates.z
-                        print(f"Keypoint {i} - Z: {z:.2f}mm")
+                        y = spatial_location.spatialCoordinates.y
+                        x = spatial_location.spatialCoordinates.x
+                        print(f"Keypoint {name} {i+1} - Z: {z:.2f}mm, Y: {y:.2f}mm, X: {y:.2f}mm")
 
-            # If the message is a different structure but has keypoints at the root level:
-            elif hasattr(msg, 'keypoints'):
-                print("--- Received Keypoints Message (Root Level) ---")
-                # You would handle this structure if the parser returns keypoints directly,
-                # but for YOLO pose, they are usually nested within detections.
 
-        time.sleep(0.01)
 
         key = visualizer.waitKey(1)
         if key == ord("q"):
