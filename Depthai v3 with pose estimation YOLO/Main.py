@@ -136,7 +136,7 @@ with pipeline:
                             # Define a small normalized ROI (e.g., a square with side length 0.01)
                             normalized_side = 0.01 # This corresponds to a very small area
                             
-                            # 2. Set the single ROI (the tiny square around the keypoint)
+                            #Set the single ROI (the tiny square around the keypoint)
                             roi_data.roi = dai.Rect(
                                 dai.Point2f(center_x - normalized_side/2, center_y - normalized_side/2),
                                 dai.Point2f(center_x + normalized_side/2, center_y + normalized_side/2)
