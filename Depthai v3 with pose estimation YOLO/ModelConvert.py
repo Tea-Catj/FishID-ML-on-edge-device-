@@ -1,6 +1,6 @@
 from modelconverter import convert
 
-def convert_model(model_path):
+def convert_model(model_path, yolo_version):
     #hubAPI key
     HubAPI= 'tapi.oS4fjKC0F5hhchR2f5mZAQ.emKmFjyYtrjGzEV8coPfaMOTWXb-O-C-oh6UaL3ntHWZ21N65OFM4GWFeD0Y7lEiab8VxBVjqOKN8n43h6n8_A'
 
@@ -11,7 +11,7 @@ def convert_model(model_path):
         superblob=False,
         name="YOLO11 Nano Pose Estimation",
         description_short="Trained YOLO11 nano pose estimation model on COCO8 dataset.",
-        yolo_version="yolov11",
+        yolo_version= yolo_version,
         yolo_input_shape="640 320",
         yolo_class_names=["person"],
         tasks=["KEYPOINT_DETECTION"],

@@ -1,9 +1,10 @@
-import time
+
 import depthai as dai
 import cv2
 from depthai_nodes.node import ParsingNeuralNetwork, ApplyColormap
 from pathlib import Path
 from model_utils import ensure_nn_archive
+from fish_size_estimate import length_estimate, weight_estimate
 
 visualizer = dai.RemoteConnection(httpPort=8082)
 fps_limit = 30
@@ -111,36 +112,31 @@ with pipeline:
             if hasattr(msg, 'detections') and msg.detections:
                 print(f"\n--- Found {len(msg.detections)} People ---")
                 
-                # Create a message to hold all ROIs
-                new_spatial_config = dai.SpatialLocationCalculatorConfig()
-
                 # 1. Iterate over each detected person
-                for i, detection in enumerate(msg.detections):
-                    print(f"{detection.label_name} {i+1}: Confidence: {detection.confidence:.2f}")
+                for person_idx, detection in enumerate(msg.detections):
+                    print(f"{detection.label_name} {person_idx+1}: Confidence: {detection.confidence:.2f}")
                     
                     # The keypoints are typically stored in a 'keypoints' attribute 
                     # within the detection object itself for pose models.
                     if hasattr(detection, 'keypoints') and detection.keypoints:
-                        print(f"  Keypoints ({len(detection.keypoints)}):")
-                        
+                        print(f" Keypoints ({len(detection.keypoints)}):")
+
+                        # Create a message to hold ROIs for this person only
+                        new_spatial_config = dai.SpatialLocationCalculatorConfig()
+
                         # 2. Iterate over each keypoint for the current person
                         # The length of keypoint_names should match len(detection.keypoints)
                         for kp_idx, keypoint in enumerate(detection.keypoints):
                             
-                            # # Get the name from your predefined list
-                            # name = keypoint_names[kp_idx]
-                            
-                            # # Print the keypoint name and its normalized coordinates (0.0 to 1.0)
-                            # # NOTE: Keypoint objects usually have 'x' and 'y' or 'x_coord'/'y_coord'
-                            # print(f"    - {name}: ({keypoint.x:.4f}, {keypoint.y:.4f})")
-                            
+                            # Create ROI for the current keypoint
                             roi_data= dai.SpatialLocationCalculatorConfigData()
+
                             # Determine the normalized center of your keypoint
                             center_x = keypoint.x # Assuming normalized coordinates (0.0 to 1.0)
                             center_y = keypoint.y
                             
                             # Define a small normalized ROI (e.g., a square with side length 0.01)
-                            normalized_side = 0.01 # This corresponds to a very small area
+                            normalized_side = 0.02 # This corresponds to a very small area
                             
                             #Set the single ROI (the tiny square around the keypoint)
                             roi_data.roi = dai.Rect(
@@ -150,23 +146,35 @@ with pipeline:
                             
                             # Add the individual ROI data to the main container
                             new_spatial_config.addROI(roi_data)
-    
-                        
-                    # Send the config to the OAK-D
-                    Spatial_config_queue.send(new_spatial_config)
 
-                    # get calculated results 
-                    spatial_data = Spatial_data_queue.get().getSpatialLocations()
-                    
-                    # print 
-                    for i, spatial_location in enumerate(spatial_data):
-                        name = keypoint_names[i]
-                        # This is a keypoint's 3D coordinate
-                        z = spatial_location.spatialCoordinates.z
-                        y = spatial_location.spatialCoordinates.y
-                        x = spatial_location.spatialCoordinates.x
-                        print(f"Keypoint {name} {i+1} - Z: {z:.2f}mm, Y: {y:.2f}mm, X: {y:.2f}mm")
+                        # Send the config to the OAK-D for this person
+                        Spatial_config_queue.send(new_spatial_config)
 
+                        # get calculated results for this person's ROIs
+                        spatial_data = Spatial_data_queue.get().getSpatialLocations()
+
+                        Head_coords = None
+                        Tail_coords = None
+                        # print each keypoint's spatial location
+                        for kp_print_idx, spatial_location in enumerate(spatial_data):
+                            
+                            # guard in case the model returned fewer keypoints than names list
+                            if kp_print_idx < len(keypoint_names):
+                                name = keypoint_names[kp_print_idx]
+                            else:
+                                name = f"KP{kp_print_idx+1}"
+                            z = spatial_location.spatialCoordinates.z
+                            y = spatial_location.spatialCoordinates.y
+                            x = spatial_location.spatialCoordinates.x
+                            print(f"{name} {kp_print_idx+1} - Z: {z:.2f}mm, Y: {y:.2f}mm, X: {x:.2f}mm")
+                            
+                            # estimate length between two keypoints
+                            if name == "Head":
+                                Head_coords = (x,y,z)
+                            if name == "Tail":
+                                Tail_coords = (x,y,z)
+                            if Head_coords and Tail_coords is not None:
+                                length = length_estimate(Head_coords, Tail_coords)
 
 
         key = visualizer.waitKey(1)

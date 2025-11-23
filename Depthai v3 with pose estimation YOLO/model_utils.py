@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 from ModelConvert import convert_model
-
+from ultralytics import YOLO
 
 def ensure_nn_archive(nn_archive_path: str, base_dir: Optional[Path] = None) -> str:
     """Ensure the NN archive exists. If not, prompt user for a .pt to convert and return the archive path.
@@ -17,7 +17,7 @@ def ensure_nn_archive(nn_archive_path: str, base_dir: Optional[Path] = None) -> 
         expected_archive = (base_dir / expected_archive).resolve()
 
     def _find_archive(search_root: Path):
-        patterns = ["**/yolo11n*", "**/*.rvc2*", "**/*.tar.xz"]
+        patterns = ["**/*.rvc2*", "**/*.tar.xz"]
         for pat in patterns:
             for p in search_root.glob(pat):
                 if p.is_file():
@@ -118,7 +118,7 @@ def ensure_nn_archive(nn_archive_path: str, base_dir: Optional[Path] = None) -> 
         pt_to_convert = _prompt_for_model(base_dir)
 
     print(f"Will attempt to convert model: {pt_to_convert}")
-    converted = convert_model(str(pt_to_convert))
+    converted = convert_model(str(pt_to_convert), yolo_version="yolov11")
 
     # Try to extract an archive path from the converter return value
     def _extract_path_from_converted(obj):
