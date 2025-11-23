@@ -2,10 +2,17 @@ import time
 import depthai as dai
 import cv2
 from depthai_nodes.node import ParsingNeuralNetwork, ApplyColormap
+from pathlib import Path
+from model_utils import ensure_nn_archive
 
 visualizer = dai.RemoteConnection(httpPort=8082)
 fps_limit = 30
+# original/default archive path (relative to this script)
+nn_archive_path = ".\\yolo11-nano-pose-estimation-exported-to-target-rvc2\\yolo11n-pose.rvc2_legacy.rvc2.tar.xz"
 
+# Ensure NN archive path exists; this may prompt the user to provide/convert a .pt
+nn_archive_path = ensure_nn_archive(nn_archive_path, base_dir=Path(__file__).parent)
+print(f"Using NN archive at: {nn_archive_path}")
 # Create pipeline
 pipeline = dai.Pipeline()
 
@@ -41,8 +48,7 @@ with pipeline:
     depth_parser.setMaxValue(int(stereo.initialConfig.getMaxDisparity())) # NOTE: Uncomment when DAI fixes a bug
     depth_parser.setColormap(cv2.COLORMAP_JET)
 
-
-    nn_archive = dai.NNArchive(".\yolo11-nano-pose-estimation-exported-to-target-rvc2\yolo11n-pose.rvc2_legacy.rvc2.tar.xz")
+    nn_archive = dai.NNArchive(nn_archive_path)
 
     #---------------------------------------------------------------------------------------------------------
     # Create the neural network node
