@@ -1,183 +1,226 @@
 
+import argparse
+import time
 import depthai as dai
 import cv2
 from depthai_nodes.node import ParsingNeuralNetwork, ApplyColormap
 from pathlib import Path
 from model_utils import ensure_nn_archive
 from fish_size_estimate import length_estimate, weight_estimate
+from tracking import TrackerHandler
 
-visualizer = dai.RemoteConnection(httpPort=8082)
-fps_limit = 30
-# original/default archive path (relative to this script)
-nn_archive_path = ".\\yolo11-nano-pose-estimation-exported-to-target-rvc2\\yolo11n-pose.rvc2_legacy.rvc2.tar.xz"
+def main(no_visualizer: bool = True):
+    fps_limit = 30
+    # original/default archive path (relative to this script)
+    nn_archive_path = ".\\yolo11-nano-pose-estimation-exported-to-target-rvc2\\yolo11n-pose.rvc2_legacy.rvc2.tar.xz"
 
-# Ensure NN archive path exists; this may prompt the user to provide/convert a .pt
-nn_archive_path = ensure_nn_archive(nn_archive_path, base_dir=Path(__file__).parent)
-print(f"Using NN archive at: {nn_archive_path}")
-# Create pipeline
-pipeline = dai.Pipeline()
+    # Ensure NN archive path exists; this may prompt the user to provide/convert a .pt
+    nn_archive_path = ensure_nn_archive(nn_archive_path, base_dir=Path(__file__).parent)
+    print(f"Using NN archive at: {nn_archive_path}")
 
-with pipeline:
-    
-    #--------------------------------------------------------------------------------------------------------------------------
-    # Define rgb cam and output
-    camRgb = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)  # don’t forget .build()
-    cameraOutput = camRgb.requestOutput((640, 320), type=dai.ImgFrame.Type.BGR888p, fps=fps_limit)
+    visualizer = None
+    if not no_visualizer:
+        try:
+            visualizer = dai.RemoteConnection(httpPort=8082)
+            print("Visualizer enabled (http://localhost:8082)")
+        except Exception as e:
+            print(f"Failed to create visualizer: {e}")
+            visualizer = None
 
-    #------------------------------------------------------------------------------------------------------------------------
-    # define mono cam
-    left = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
-    right = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
-    leftOutput =  left.requestOutput((640, 320),type=dai.ImgFrame.Type.NV12, fps= fps_limit)
-    rightOutput = right.requestOutput((640, 320),type= dai.ImgFrame.Type.NV12, fps = fps_limit)
+    pipeline = dai.Pipeline()
 
-    # define stereo 
-    stereo = pipeline.create(dai.node.StereoDepth).build(
-        left=leftOutput,
-        right=rightOutput,
-    )
+    with pipeline:
+        # Define rgb cam and output
+        camRgb = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
+        cameraOutput = camRgb.requestOutput((640, 320), type=dai.ImgFrame.Type.BGR888p, fps=fps_limit)
 
-    # stereo config
-    stereo.initialConfig.setMedianFilter(dai.MedianFilter.MEDIAN_OFF)
-    stereo.setRectification(True)
-    stereo.setExtendedDisparity(True)
-    stereo.setLeftRightCheck(True)
-    cameraOutput.link(stereo.inputAlignTo)
+        # define mono cam
+        left = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
+        right = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
+        leftOutput = left.requestOutput((640, 320), type=dai.ImgFrame.Type.NV12, fps=fps_limit)
+        rightOutput = right.requestOutput((640, 320), type=dai.ImgFrame.Type.NV12, fps=fps_limit)
 
-    # create depthmap
-    depth_parser = pipeline.create(ApplyColormap).build(stereo.disparity)
-    depth_parser.setMaxValue(int(stereo.initialConfig.getMaxDisparity())) # NOTE: Uncomment when DAI fixes a bug
-    depth_parser.setColormap(cv2.COLORMAP_JET)
+        # define stereo
+        stereo = pipeline.create(dai.node.StereoDepth).build(left=leftOutput, right=rightOutput)
+        stereo.initialConfig.setMedianFilter(dai.MedianFilter.MEDIAN_OFF)
+        stereo.setRectification(True)
+        stereo.setExtendedDisparity(True)
+        stereo.setLeftRightCheck(True)
+        cameraOutput.link(stereo.inputAlignTo)
 
-    nn_archive = dai.NNArchive(nn_archive_path)
+        # create depthmap
+        depth_parser = pipeline.create(ApplyColormap).build(stereo.disparity)
+        depth_parser.setColormap(cv2.COLORMAP_JET)
 
-    #---------------------------------------------------------------------------------------------------------
-    # Create the neural network node
-    nn_with_parser = pipeline.create(ParsingNeuralNetwork).build(
-        cameraOutput, 
-        nn_archive,
-    )
-    nn_with_parser.input.setBlocking(False)
-    nn_with_parser.input.setMaxSize(1)
-    
-    # since the ParsingNeuralNetwork node is already choose the correct parser for the model, to mannually change the config
-    # you need to get the parser and change its parameter  
-    if nn_with_parser.getParser():
+        nn_archive = dai.NNArchive(nn_archive_path)
+
+        # Create the neural network node
+        nn_with_parser = pipeline.create(ParsingNeuralNetwork).build(cameraOutput, nn_archive)
+        nn_with_parser.input.setBlocking(False)
+        nn_with_parser.input.setMaxSize(1)
+
+        
         parser = nn_with_parser.getParser()
-        #yolo parser parameter
-        parser.setConfidenceThreshold(0.8)
+        parser.setConfidenceThreshold(0.4)
         parser.setIouThreshold(0.5)
 
-    #-------------------------------------------------------------------------------------------------------------
-    # create pipeline for spatial calculation
-    Spatial_cal = pipeline.create(dai.node.SpatialLocationCalculator)
+        # create pipeline for spatial calculation
+        Spatial_cal = pipeline.create(dai.node.SpatialLocationCalculator)
 
-    #------------------------------------------------------------------------------------------------------------
-    # Configure the visualizer node
-    visualizer.addTopic("Video", nn_with_parser.passthrough, "images")
-    visualizer.addTopic("Detections", nn_with_parser.out, "detections")
-    visualizer.addTopic("Depth", depth_parser.out, "images")
-    visualizer.addTopic("Left", leftOutput, "images")
-    visualizer.addTopic("Right", rightOutput, "images")
+        # Configure the visualizer node (only if requested)
+        if visualizer is not None:
+            try:
+                visualizer.addTopic("Video", nn_with_parser.passthrough, "images")
+                visualizer.addTopic("Detections", nn_with_parser.out, "detections")
+                visualizer.addTopic("Depth", depth_parser.out, "images")
+                visualizer.addTopic("Left", leftOutput, "images")
+                visualizer.addTopic("Right", rightOutput, "images")
+            except Exception as e:
+                print(f"Failed to configure visualizer topics: {e}")
 
-    #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    # define queue
+        # define queues
+        colorFrame = cameraOutput.createOutputQueue(maxSize=1, blocking=False)
+        parser_output_queue = nn_with_parser.out.createOutputQueue(maxSize=1, blocking=False)
+        keypoint_names = ["Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear", "Left Shoulder", "Right Shoulder", "Left Elbow", "Right Elbow", "Left Wrist", "Right Wrist", "Left Hip", "Right Hip", "Left Knee", "Right Knee", "Left Ankle", "Right Ankle"]
+        keypoint_fish = ["Head", "Tail"]
+        Spatial_data_queue = Spatial_cal.out.createOutputQueue(maxSize=1, blocking=False)
+        Spatial_config_queue = Spatial_cal.inputConfig.createInputQueue(maxSize=1, blocking=False)
+        # Spatial_depth_queue = Spatial_cal.passthroughDepth.createOutputQueue(maxSize=1, blocking=False)
+        stereo.depth.link(Spatial_cal.inputDepth)
 
-    # create neuro network parsed ouput queue for getting the model output
-    parser_output_queue = nn_with_parser.out.createOutputQueue(maxSize= 1 ,blocking= False)
-    keypoint_names=["Nose", "Left Eye", "Right Eye", "Left Ear", "Right Ear", "Left Shoulder", "Right Shoulder","Left Elbow", "Right Elbow", "Left Wrist", "Right Wrist", "Left Hip", "Right Hip", "Left Knee", "Right Knee", "Left Ankle", "Right Ankle"]
+        #initalized tracker
+        tracker = TrackerHandler()
 
-    # create spatial data queue
-    Spatial_data_queue = Spatial_cal.out.createOutputQueue(maxSize= 1 ,blocking= False)
-
-    # spatial config input queue 
-    Spatial_config_queue = Spatial_cal.inputConfig.createInputQueue(maxSize= 1 ,blocking= False)
-
-    # depthdata from depth output to spatial cal for calculation
-    Spatial_depth_queue = Spatial_cal.passthroughDepth.createOutputQueue(maxSize= 1 ,blocking= False)
-    stereo.depth.link(Spatial_cal.inputDepth)
-
-    #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-    #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     # start the pipeline
     pipeline.start()
-    visualizer.registerPipeline(pipeline)
-    while True:
-        
-        msg = parser_output_queue.tryGet() 
-        
-        if msg is not None:
-            # Check for the existence of the 'detections' attribute
-            if hasattr(msg, 'detections') and msg.detections:
-                print(f"\n--- Found {len(msg.detections)} People ---")
+    if visualizer is not None:
+        try:
+            visualizer.registerPipeline(pipeline)
+        except Exception as e:
+            print(f"Failed to register pipeline with visualizer: {e}")
+
+    try:
+        while True:
+            msg = parser_output_queue.get()
+            color_msg = colorFrame.get()
+            if color_msg is not None:
+                color_image = color_msg.getCvFrame() 
+                # get frame dimensions
+                h, w, _ = color_image.shape
                 
-                # 1. Iterate over each detected person
-                for person_idx, detection in enumerate(msg.detections):
-                    print(f"{detection.label_name} {person_idx+1}: Confidence: {detection.confidence:.2f}")
-                    
-                    # The keypoints are typically stored in a 'keypoints' attribute 
-                    # within the detection object itself for pose models.
-                    if hasattr(detection, 'keypoints') and detection.keypoints:
-                        print(f" Keypoints ({len(detection.keypoints)}):")
+                if msg is not None:
+                    if hasattr(msg, 'detections') and msg.detections:
+                        print(f"\n--- Found {len(msg.detections)} fish(es) ---")
 
-                        # Create a message to hold ROIs for this person only
-                        new_spatial_config = dai.SpatialLocationCalculatorConfig()
+                        try:
+                            tracked = tracker.get_tracked_results(msg.detections, color_image.shape)
+                            print(f"Tracked results: {tracked.tracker_id}")
 
-                        # 2. Iterate over each keypoint for the current person
-                        # The length of keypoint_names should match len(detection.keypoints)
-                        for kp_idx, keypoint in enumerate(detection.keypoints):
-                            
-                            # Create ROI for the current keypoint
-                            roi_data= dai.SpatialLocationCalculatorConfigData()
+                        except Exception as e:
+                            print(f"error: {e}")
+                                
 
-                            # Determine the normalized center of your keypoint
-                            center_x = keypoint.x # Assuming normalized coordinates (0.0 to 1.0)
-                            center_y = keypoint.y
-                            
-                            # Define a small normalized ROI (e.g., a square with side length 0.01)
-                            normalized_side = 0.02 # This corresponds to a very small area
-                            
-                            #Set the single ROI (the tiny square around the keypoint)
-                            roi_data.roi = dai.Rect(
-                                dai.Point2f(center_x - normalized_side/2, center_y - normalized_side/2),
-                                dai.Point2f(center_x + normalized_side/2, center_y + normalized_side/2)
-                            )
-                            
-                            # Add the individual ROI data to the main container
-                            new_spatial_config.addROI(roi_data)
+                        for fish_idx, detection in enumerate(msg.detections):
+                            if fish_idx < len(tracked.tracker_id):
+                                fishID = tracked.tracker_id[fish_idx]
 
-                        # Send the config to the OAK-D for this person
-                        Spatial_config_queue.send(new_spatial_config)
+                            print(f"{detection.label_name} {fish_idx+1} ID[{fishID}]: Confidence: {detection.confidence:.2f}")
 
-                        # get calculated results for this person's ROIs
-                        spatial_data = Spatial_data_queue.get().getSpatialLocations()
+                            if hasattr(detection, 'keypoints') and detection.keypoints:
+                                print(f" Keypoints ({len(detection.keypoints)}):")
+                                new_spatial_config = dai.SpatialLocationCalculatorConfig()
+                                for kp_idx, keypoint in enumerate(detection.keypoints):
+                                    roi_data = dai.SpatialLocationCalculatorConfigData()
+                                    
+                                    # unnormalize for cv2 drawing
+                                    xi = int(keypoint.x*w)
+                                    yi = int(keypoint.y*h)
+                                    cv2.circle(color_image, (xi,yi), radius = 2, color=(0, 255, 0), thickness=-1)
+                                    cv2.putText(color_image, keypoint_names[kp_idx], (xi + 10, yi), cv2.FONT_HERSHEY_TRIPLEX, 0.3, color=(0, 255, 0))
+                                    
+                                    center_x = keypoint.x
+                                    center_y = keypoint.y
+                                    normalized_side = 0.02
+                                    roi_data.roi = dai.Rect(
+                                        dai.Point2f(center_x - normalized_side/2, center_y - normalized_side/2),
+                                        dai.Point2f(center_x + normalized_side/2, center_y + normalized_side/2),
+                                    )
+                                    new_spatial_config.addROI(roi_data)
 
-                        Head_coords = None
-                        Tail_coords = None
-                        # print each keypoint's spatial location
-                        for kp_print_idx, spatial_location in enumerate(spatial_data):
-                            
-                            # guard in case the model returned fewer keypoints than names list
-                            if kp_print_idx < len(keypoint_names):
-                                name = keypoint_names[kp_print_idx]
-                            else:
-                                name = f"KP{kp_print_idx+1}"
-                            z = spatial_location.spatialCoordinates.z
-                            y = spatial_location.spatialCoordinates.y
-                            x = spatial_location.spatialCoordinates.x
-                            print(f"{name} {kp_print_idx+1} - Z: {z:.2f}mm, Y: {y:.2f}mm, X: {x:.2f}mm")
-                            
-                            # estimate length between two keypoints
-                            if name == "Head":
-                                Head_coords = (x,y,z)
-                            if name == "Tail":
-                                Tail_coords = (x,y,z)
-                            if Head_coords and Tail_coords is not None:
-                                length = length_estimate(Head_coords, Tail_coords)
+                                Spatial_config_queue.send(new_spatial_config)
+
+                                spatial_data = Spatial_data_queue.get().getSpatialLocations()
+                                Head_coords = None
+                                Tail_coords = None
+                                if spatial_data is not None:
+                                    for kp_print_idx, spatial_location in enumerate(spatial_data):
+                                        if kp_print_idx < len(keypoint_names):
+                                            name = keypoint_names[kp_print_idx]
+                                        else:
+                                            name = f"KP{kp_print_idx+1}"
+                                        z = spatial_location.spatialCoordinates.z
+                                        y = spatial_location.spatialCoordinates.y
+                                        x = spatial_location.spatialCoordinates.x
+                                        print(f"{name} {kp_print_idx+1} - Z: {z:.2f} mm, Y: {y:.2f}, X: {x:.2f}")
+
+                                        # Estimate length only if Z values are reliable
+                                        if z >= 3.4:
+                                            if name == "Head":
+                                                Head_coords = (x, y, z)
+                                            if name == "Tail":
+                                                Tail_coords = (x, y, z)
+                                            if Head_coords is not None and Tail_coords is not None:
+                                                length = length_estimate(Head_coords, Tail_coords)
+                                                print(f"Estimated length: {length:.2f} mm")
+                                        else:
+                                            print(f"The Z value of coridinate too low for reliable measurement.")
+
+                cv2.imshow("key point ye", color_image)
+                
+
+            key = cv2.waitKey(1)
+            if key == ord("x"):
+                print("Got x key from keyboard!")
+                break
+
+            # handle key input only if visualizer is present
+            if visualizer is not None:
+                try:
+                    key = visualizer.waitKey(1)
+                    if key == ord('q'):
+                        print("Got q key from the remote connection!")
+                        break
+                except Exception:
+                    # if visualizer fails, break out and cleanup
+                    print("Visualizer waitKey failed; exiting loop")
+                    break
+    
+    
+    except KeyboardInterrupt:
+        print("Interrupted by user")
+    except Exception as e:
+        print(f"Exception in main loop: {e}")
+    finally:
+        print("Cleaning up: stopping pipeline and closing visualizer (if available)")
+        try:
+            pipeline.stop()
+        except Exception:
+            pass
+        if visualizer is not None:
+            if hasattr(visualizer, 'unregisterPipeline'):
+                try:
+                    visualizer.unregisterPipeline(pipeline)
+                except Exception:
+                    pass
+            if hasattr(visualizer, 'close'):
+                try:
+                    visualizer.close()
+                except Exception:
+                    pass
 
 
-        key = visualizer.waitKey(1)
-        if key == ord("q"):
-            print("Got q key from the remote connection!")
-            break
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--no-visualizer', action='store_false', help='Disable RemoteConnection visualizer (for testing)')
+    args = ap.parse_args()
+    main(no_visualizer=args.no_visualizer)

@@ -2,18 +2,18 @@ from modelconverter import convert
 
 def convert_model(model_path, yolo_version):
     #hubAPI key
-    HubAPI= 'tapi.oS4fjKC0F5hhchR2f5mZAQ.emKmFjyYtrjGzEV8coPfaMOTWXb-O-C-oh6UaL3ntHWZ21N65OFM4GWFeD0Y7lEiab8VxBVjqOKN8n43h6n8_A'
+    HubAPI= 'tapi.oS4fjKC0F5hhchR2f5mZAQ.LBPt2-sBo1CyUra0sl2ucxx2JqsqpYkjHYFHARmWf7-_Q-oLl3BkVIx5F0FDo8oe9Dx32-pGc3EnV0aC-4aHdA'
 
     converted_model = convert.RVC2(
         api_key=HubAPI,
         path= model_path,
-        number_of_shaves=5, 
+        number_of_shaves=4, 
         superblob=False,
-        name="YOLO11 Nano Pose Estimation",
-        description_short="Trained YOLO11 nano pose estimation model on COCO8 dataset.",
+        name="YOLO-Pose-Estimation-RVC2",
+        description_short="yolo",
         yolo_version= yolo_version,
         yolo_input_shape="640 320",
-        yolo_class_names=["person"],
+        yolo_class_names=["snakehead"],
         tasks=["KEYPOINT_DETECTION"],
         license_type="MIT",
         is_public=False
