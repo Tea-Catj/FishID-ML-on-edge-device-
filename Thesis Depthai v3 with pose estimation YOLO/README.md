@@ -8,9 +8,9 @@ Install all the required library in requirement.txt <br/>
 pip install -r requirement.txt
 
 ```
-Simply run main.py to start <br/>
+Simply run MainTrackCurrent.py to start <br/>
 
 ```
-python main.py 
+python MainTrackCurrent.py 
 
 ```
