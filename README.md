@@ -12,3 +12,5 @@ There are 6 types of fish species that will be detected by this Ml:
 - cá neon (Neon tetra fish)
 - cá lau kiếng cam (orange janitor fish)
 - cá sặc (gourami fish)
+
+The list above is for old project not the thesis one. The thesis project is in "Thesis Depthai v3 with pose estimation YOLO" folder 
